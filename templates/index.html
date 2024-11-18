@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>House Price Prediction</title>
+    <style>
+        /* General Reset */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: Arial, sans-serif;
+        }
+
+        /* Center content */
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #f0f2f5;
+        }
+
+        /* Form container */
+        .container {
+            background: #ffffff;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            max-width: 400px;
+            width: 100%;
+            text-align: center;
+            position: relative;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        /* Tabs styling */
+        .tab {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+
+        .tab button {
+            background-color: #d9d9d9;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.3s;
+        }
+
+        .tab button.active {
+            background-color: #4CAF50;
+            color: white;
+        }
+
+        /* Form Fields */
+        label {
+            font-weight: bold;
+            display: block;
+            margin: 10px 0 5px;
+            text-align: left;
+        }
+
+        input[type="number"],
+        input[type="text"],
+        select {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 15px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+
+        button {
+            padding: 10px 20px;
+            margin-top: 10px;
+            margin-bottom: 15px;
+            border: none;
+            border-radius: 5px;
+            color: #fff;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.3s, transform 0.3s;
+            background-color: #5b7188; /* Darker, more visible blue */
+        }
+
+        button:hover {
+            background-color: #5b7188; /* Darker blue on hover */
+            transform: scale(1.05); /* Slight scaling effect on hover */
+        }
+
+        button:active {
+            background-color: #5b7188; /* Even darker blue when clicked */
+            transform: scale(0.98); /* Slight shrink effect on click */
+        }
+
+        
+        #result {
+            color: #333;
+            font-size: 1.2em;
+            margin-top: 20px;
+        }
+
+        /* Spinner styling */
+        .spinner {
+            display: none;
+            margin: 20px auto;
+            width: 30px;
+            height: 30px;
+            border: 4px solid #ccc;
+            border-top: 4px solid #333;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Predict House Price</h1>
+
+        <!-- Tabs for Model Selection -->
+        <div class="tab">
+            <button class="tablinks active" onclick="switchModel(event, 'Lite')">Lite Model</button>
+            <button class="tablinks" onclick="switchModel(event, 'Full')">Full Model</button>
+        </div>
+
+        <!-- Form -->
+        <form id="predictionForm">
+            <label for="city">City:</label>
+            <select id="city" name="city" required>
+                <option value="Warszawa">Warszawa</option>
+                <option value="Poznań">Poznań</option>
+                <option value="Kraków">Kraków</option>
+            </select>
+
+            <label for="rooms">Rooms:</label>
+            <input type="number" id="rooms" name="rooms" min="1" max="10" required>
+
+            <label for="floor">Floor:</label>
+            <input type="number" id="floor" name="floor" min="1" max="10" required>
+
+            <label for="latitude">Latitude:</label>
+            <input type="number" id="latitude" name="latitude" step="any" required>
+
+            <label for="longitude">Longitude:</label>
+            <input type="number" id="longitude" name="longitude" step="any" required>
+
+            <label for="sq">Square Meters:</label>
+            <input type="number" id="sq" name="sq" step="any" required>
+
+            <!-- Full model-only fields -->
+            <div id="fullModelFields" style="display: none;">
+                <label for="year">Year:</label>
+                <input type="text" id="year" name="year" pattern="\d{4}" title="Enter a valid year (e.g., 2001)">
+
+                <label for="address">Address:</label>
+                <input type="text" id="address" name="address">
+            </div>
+
+            <button type="button" onclick="getRandomHouse()">Load random house data from test dataframe</button>
+            <button type="button" onclick="predict()">Predict the price</button>            
+        </form>
+
+        <!-- Result and Spinner -->
+        <div id="spinner" class="spinner"></div>        
+        <h2 id="result"></h2>
+        
+    </div>
+
+    <script>
+        // Toggle between Lite and Full model
+        function switchModel(evt, model) {
+            const fullFields = document.getElementById("fullModelFields");
+            const liteModel = model === "Lite";
+
+            // Show or hide full model fields based on selection
+            fullFields.style.display = liteModel ? "none" : "block";
+
+            // Update tab active states
+            document.querySelectorAll(".tab button").forEach(button => button.classList.remove("active"));
+            evt.currentTarget.classList.add("active");
+
+            clear_form();
+        }
+
+        async function predict() {
+            // Show spinner and clear result
+            document.getElementById("spinner").style.display = "block";
+            document.getElementById("result").innerHTML = "";
+
+            // Prepare form data based on the selected model
+            const selectedModel = document.querySelector(".tab button.active").textContent === "Lite Model" ? "lite" : "full";
+            const year = document.getElementById("year").value;
+
+            // Check if all required fields are filled for both models
+            const requiredFields = [
+                "city", "rooms", "floor", "latitude", "longitude", "sq"
+            ];
+
+            // Check if any required fields are missing
+            for (let field of requiredFields) {
+                if (document.getElementById(field).value.trim() === "") {
+                    alert(`Please fill in the ${field} field.`);
+                    document.getElementById("spinner").style.display = "none";
+                    return;
+                }
+            }
+
+            if (selectedModel === "full") {
+                if (!/^\d{4}$/.test(year)) {
+                    alert("Please enter a valid 4-digit year.");
+                    document.getElementById("spinner").style.display = "none";
+                    return;
+                } else if (document.getElementById("address").value.trim() === "") {
+                    alert("Please enter a valid address.");
+                    document.getElementById("spinner").style.display = "none";
+                    return;
+                }                
+            }
+
+            const house = {
+                city: document.getElementById("city").value,
+                rooms: parseInt(document.getElementById("rooms").value),
+                floor: parseInt(document.getElementById("floor").value),
+                latitude: parseFloat(document.getElementById("latitude").value),
+                longitude: parseFloat(document.getElementById("longitude").value),
+                sq: parseFloat(document.getElementById("sq").value),
+                model_type: selectedModel
+            };
+
+            if (selectedModel === "full") {
+                house.year = parseInt(year);
+                house.address = document.getElementById("address").value;
+            }
+
+            const apiUrl = getBaseUrl("predict");
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(house)
+                });
+                const result = await response.json();
+                // Hide spinner and display the result
+                document.getElementById("spinner").style.display = "none";
+                document.getElementById("result").innerHTML = `Predicted Price: ${formatPrice(result.house_price)} PLN`;
+            } catch (error) {
+                document.getElementById("spinner").style.display = "none";
+                document.getElementById("result").innerHTML = "Error: Unable to fetch prediction.";
+                console.error("Prediction error:", error);
+            } finally {
+                document.getElementById("spinner").style.display = "none";
+            }
+        }
+
+        function getBaseUrl(endpoint) {
+            const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+            return `${isLocal ? "http://localhost:8080" : "https://house-prices-latest.onrender.com"}/${endpoint}`;
+        }
+
+        function formatPrice(price) {
+            return new Intl.NumberFormat("pl-PL").format(Math.round(price));
+        }
+
+        function capitalizeFirstLetter(val) {
+            return String(val).charAt(0).toUpperCase() + String(val).slice(1);
+        }
+
+        function clear_form() {
+            document.getElementById("spinner").style.display = "none";
+            document.getElementById("result").innerHTML = "";
+
+            document.getElementById("city").value = "";
+            document.getElementById("rooms").value = "";
+            document.getElementById("floor").value = "";
+            document.getElementById("latitude").value = "";
+            document.getElementById("longitude").value = "";
+            document.getElementById("sq").value = "";
+            document.getElementById("year").value = "";
+            document.getElementById("address").value = "";
+        }
+
+        async function getRandomHouse() {
+            // Determine selected model type
+            const selectedModel = document.querySelector(".tab button.active").textContent === "Lite Model" ? "lite" : "full";
+            const apiUrl = getBaseUrl(`random-house?model_type=${selectedModel}`);
+            document.getElementById("spinner").style.display = "block";
+            document.getElementById("result").innerHTML = "";
+
+            try {
+                const response = await fetch(apiUrl);
+                const randomHouse = await response.json();
+
+                // Populate form fields with random house data
+                document.getElementById("city").value = capitalizeFirstLetter(randomHouse.city);
+                document.getElementById("rooms").value = randomHouse.rooms;
+                document.getElementById("floor").value = randomHouse.floor;
+                document.getElementById("latitude").value = randomHouse.latitude;
+                document.getElementById("longitude").value = randomHouse.longitude;
+                document.getElementById("sq").value = randomHouse.sq;
+                document.getElementById("year").value = randomHouse.year || "";
+                document.getElementById("address").value = randomHouse.address || "";
+                
+            } catch (error) {
+                console.error("Error fetching random house data:", error);
+                document.getElementById("result").innerHTML = "Error: Unable to load random house data.";
+            } finally {
+                document.getElementById("spinner").style.display = "none";
+            }
+        }
+
+    </script>
+</body>
+</html>
